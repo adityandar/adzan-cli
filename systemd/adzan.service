@@ -1,0 +1,15 @@
+[Unit]
+Description=Adzan otomatis
+After=sound.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/share/adzan/venv/bin/adzan-cli run
+Restart=on-failure
+RestartSec=15
+TimeoutStopSec=10
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=default.target

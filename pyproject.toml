@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "adzan-cli"
+version = "1.0.0"
+description = "Headless Ubuntu prayer scheduler with API cache and offline fallback"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+adzan-cli = "adzan.cli:main"
+
+[tool.setuptools]
+packages = ["adzan"]
+
+[tool.setuptools.package-data]
+adzan = ["audio/*.mp3"]
