@@ -33,26 +33,43 @@ def due_events(times, now, grace=90):
     return [(name, when) for name, when in times.items() if 0 <= now.timestamp() - when.timestamp() <= grace]
 
 
+def reminder_events(times, now, config):
+    if not config.reminder_minutes:
+        return []
+    reminders = {name: datetime.fromtimestamp(when.timestamp() - config.reminder_minutes * 60, when.tzinfo)
+                 for name, when in times.items() if now.timestamp() < when.timestamp()}
+    return due_events(reminders, now)
+
+
 def player_command(config, prayer):
     audio = config.fajr_audio if prayer == 'Fajr' and config.fajr_audio else config.audio
+    if prayer == 'Reminder':
+        audio = config.reminder_audio
     return ['mpv', '--no-config', '--no-video', '--no-terminal', '--ao=alsa',
             f'--audio-device={config.audio_device}', f'--volume={config.volume}', '--', audio]
 
 
-def check_audio(config):
+def check_audio(config, reminder_only=False):
     from pathlib import Path
     if not shutil.which('mpv'):
         raise ValueError('mpv belum terpasang. Jalankan sudo apt install mpv.')
-    for audio in (config.audio, config.fajr_audio or config.audio):
+    files = [config.reminder_audio] if reminder_only else [config.audio, config.fajr_audio or config.audio]
+    if config.reminder_minutes and not reminder_only:
+        files.append(config.reminder_audio)
+    for audio in files:
         if not audio or not Path(audio).is_file():
-            raise ValueError(f'File audio tidak ditemukan: {audio!r}. Jalankan adzan-cli configure --audio /path/adzan.mp3.')
+            option = '--reminder-audio' if reminder_only or audio == config.reminder_audio else '--audio'
+            raise ValueError(f'File audio tidak ditemukan: {audio!r}. Jalankan adzan-cli configure {option} /path/audio.mp3.')
 
 
-def play(config, prayer, stop):
+def play(config, prayer, stop, until=None):
     process = subprocess.Popen(player_command(config, prayer))
     try:
         deadline = time.monotonic() + 900
         while process.poll() is None:
+            if until is not None and time.time() >= until.timestamp():
+                log.info('Reminder dihentikan karena waktu adzan tiba.')
+                return True
             if stop.wait(0.2) or time.monotonic() > deadline:
                 return False
         return process.returncode == 0
@@ -60,7 +77,7 @@ def play(config, prayer, stop):
         if process.poll() is None:
             process.terminate()
             try:
-                process.wait(timeout=5)
+                process.wait(timeout=0.5 if until is not None else 5)
             except subprocess.TimeoutExpired:
                 process.kill()
                 process.wait()
@@ -91,6 +108,7 @@ def run(provider, data_dir, offline=False):
         try:
             while not stop.is_set():
                 now = datetime.now(provider.config.tz)
+                schedules = []
                 # Adjacent dates cover offset adjustments across midnight.
                 for delta in (-1, 0, 1):
                     day = now.date() + timedelta(days=delta)
@@ -100,19 +118,35 @@ def run(provider, data_dir, offline=False):
                         log.error('%s', e)
                         stop.wait(60)
                         break
-                    for prayer, when in due_events(times, now):
-                        key = f'{day.isoformat()}:{prayer}'
-                        if stop.is_set() or not ledger.claim(key):
-                            continue
-                        log.info('Memutar %s, jadwal %s, sumber %s', NAMES[prayer], when.isoformat(), source)
-                        try:
-                            success = play(provider.config, prayer, stop)
-                        except OSError:
-                            log.exception('Pemutar gagal')
-                            success = False
-                        ledger.finish(key, 'played' if success else 'failed')
-                        if not success:
-                            log.error('Audio gagal/dihentikan untuk %s; tidak diulang otomatis.', key)
+                    schedules.append((day, times, source))
+                # Adhan first; re-read the clock after each (blocking) playback.
+                for reminder in (False, True):
+                    for day, times, source in schedules:
+                        now = datetime.now(provider.config.tz)
+                        events = reminder_events(times, now, provider.config) if reminder else due_events(times, now)
+                        for prayer, when in events:
+                            now = datetime.now(provider.config.tz)
+                            if not 0 <= now.timestamp() - when.timestamp() <= 90:
+                                continue
+                            if reminder and now.timestamp() >= times[prayer].timestamp():
+                                continue
+                            key = f'{day.isoformat()}:{prayer}' + (':reminder' if reminder else '')
+                            if stop.is_set() or not ledger.claim(key):
+                                continue
+                            label = f'Reminder {NAMES[prayer]}' if reminder else NAMES[prayer]
+                            log.info('Memutar %s, jadwal %s, sumber %s', label, when.isoformat(), source)
+                            try:
+                                if reminder:
+                                    cutoff = min(t for _, schedule, _ in schedules for t in schedule.values() if t.timestamp() > now.timestamp())
+                                    success = play(provider.config, 'Reminder', stop, until=cutoff)
+                                else:
+                                    success = play(provider.config, prayer, stop)
+                            except OSError:
+                                log.exception('Pemutar gagal')
+                                success = False
+                            ledger.finish(key, 'played' if success else 'failed')
+                            if not success:
+                                log.error('Audio gagal/dihentikan untuk %s; tidak diulang otomatis.', key)
                 stop.wait(1)
         finally:
             stop.set()

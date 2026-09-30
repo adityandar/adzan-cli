@@ -252,6 +252,62 @@ Referensi: [AlAdhan methods](https://api.aladhan.com/v1/methods),
 - Konfigurasi: `~/.config/adzan/config.json`; cache/ledger:
   `~/.local/share/adzan/`. Ledger menyimpan riwayat playback untuk mencegah adzan diputar dua kali; jangan dihapus.
 
+## Reminder sebelum adzan
+
+Reminder default-nya nonaktif. Untuk mengaktifkan reminder **10 menit sebelum
+setiap adzan**, siapkan file audio sendiri, lalu jalankan:
+
+```bash
+adzan-cli configure \
+  --reminder-minutes 10 \
+  --reminder-audio "$HOME/Music/reminder.mp3"
+
+adzan-cli test-audio --reminder
+systemctl --user restart adzan
+```
+
+`--reminder-minutes` menerima bilangan bulat 1–1439 menit. Audio reminder wajib
+diisi dan file-nya harus tersedia; aplikasi tidak memakai audio adzan sebagai
+pengganti. Satu pengaturan berlaku untuk semua lima waktu salat. Reminder memakai
+audio device dan volume yang sama dengan adzan.
+
+Untuk mengubah jeda setelah audio dikonfigurasi:
+
+```bash
+adzan-cli configure --reminder-minutes 15
+systemctl --user restart adzan
+```
+
+Untuk menonaktifkan reminder tanpa mengubah adzan:
+
+```bash
+adzan-cli configure --reminder-minutes 0
+systemctl --user restart adzan
+```
+
+Reminder mengikuti jadwal salat yang sudah dikoreksi dengan `--offset`, termasuk
+jika waktunya jatuh pada hari sebelumnya. Grace period-nya 90 detik, tetapi
+reminder yang sudah melewati waktu salat tujuan tidak diputar. Audio reminder
+yang masih berjalan dihentikan saat waktu adzan terdekat tiba. Durasi audio tetap
+dibatasi 15 menit. Status reminder dicatat terpisah dari adzan untuk mencegah
+playback ganda setelah restart; mengganti jeda tidak mengulang reminder yang
+sudah diputar untuk salat dan tanggal yang sama.
+
+### Update instalasi yang sudah berjalan
+
+Jalankan sebagai user yang menjalankan service, dari folder hasil clone:
+
+```bash
+cd ~/adzan-cli  # sesuaikan dengan lokasi folder hasil clone
+git pull --ff-only
+./install.sh
+systemctl --user restart adzan
+```
+
+Konfigurasi lokasi dan audio yang sudah ada tetap dipakai. Setelah update,
+aktifkan reminder dengan perintah di atas; konfigurasi lama tetap nonaktif
+sampai `--reminder-minutes` diatur.
+
 ## Audio troubleshooting
 
 ```bash

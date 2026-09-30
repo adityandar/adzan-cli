@@ -34,6 +34,8 @@ def parser():
     c.add_argument('--school', type=int, choices=(0, 1))
     c.add_argument('--audio')
     c.add_argument('--fajr-audio')
+    c.add_argument('--reminder-minutes', type=int, help='Menit sebelum setiap adzan (1..1439); 0 menonaktifkan')
+    c.add_argument('--reminder-audio', help='File audio wajib saat reminder diaktifkan')
     c.add_argument('--audio-device')
     c.add_argument('--volume', type=int)
     c.add_argument('--offset', action='append', metavar='Fajr=2', help='Nama API: Fajr,Dhuhr,Asr,Maghrib,Isha; menit -60..60')
@@ -47,7 +49,9 @@ def parser():
             c.add_argument('--watch', action='store_true')
     commands.add_parser('sync', help='Perbarui cache bulan ini dan berikutnya')
     c = commands.add_parser('test-audio', help='Putar audio sekarang')
-    c.add_argument('--fajr', action='store_true')
+    audio_choice = c.add_mutually_exclusive_group()
+    audio_choice.add_argument('--fajr', action='store_true')
+    audio_choice.add_argument('--reminder', action='store_true')
     c = commands.add_parser('run', help='Jalankan daemon di foreground')
     c.add_argument('--offline', action='store_true')
     return p
@@ -91,7 +95,9 @@ def configure(args):
     for item in args.offset or []:
         name, minutes = item.split('=', 1)
         values['offsets'][name] = int(minutes)
-    for key in ('audio', 'fajr_audio'):
+    for key in ('audio', 'fajr_audio', 'reminder_audio'):
+        if key == 'reminder_audio' and not values['reminder_minutes'] and args.reminder_audio is None:
+            continue
         if values[key]:
             path = Path(values[key]).expanduser().resolve()
             if not path.is_file():
@@ -162,8 +168,12 @@ def main(argv=None):
                     break
                 threading.Event().wait(1)
         elif args.command == 'test-audio':
-            check_audio(config)
-            return 0 if play(config, 'Fajr' if args.fajr else 'Dhuhr', threading.Event()) else 1
+            if args.reminder:
+                check_audio(config, reminder_only=True)
+            else:
+                check_audio(config)
+            prayer = 'Reminder' if args.reminder else ('Fajr' if args.fajr else 'Dhuhr')
+            return 0 if play(config, prayer, threading.Event()) else 1
         elif args.command == 'run':
             run(provider, args.data_dir, args.offline)
         return 0

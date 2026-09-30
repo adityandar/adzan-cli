@@ -41,6 +41,8 @@ class Config:
     fajr_audio: str = ''
     audio_device: str = 'alsa/default'
     volume: int = 100
+    reminder_minutes: int = 0
+    reminder_audio: str = ''
 
     def __post_init__(self):
         for key, limit in (('latitude', 90), ('longitude', 180)):
@@ -57,9 +59,13 @@ class Config:
             raise ValueError('Koreksi harus berupa menit bulat -60..60 per salat.')
         if type(self.volume) is not int or not 0 <= self.volume <= 100:
             raise ValueError('Volume harus 0..100.')
-        for key in ('location', 'audio', 'fajr_audio', 'audio_device'):
+        for key in ('location', 'audio', 'fajr_audio', 'audio_device', 'reminder_audio'):
             if not isinstance(getattr(self, key), str):
                 raise ValueError(f'{key} harus berupa teks.')
+        if type(self.reminder_minutes) is not int or not 0 <= self.reminder_minutes <= 1439:
+            raise ValueError('Reminder harus 0..1439 menit bulat; 0 untuk menonaktifkan.')
+        if self.reminder_minutes and not self.reminder_audio.strip():
+            raise ValueError('Audio reminder wajib diisi: --reminder-audio /path/reminder.mp3.')
 
     @property
     def tz(self):
